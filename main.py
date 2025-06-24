@@ -3,7 +3,7 @@ import io
 import requests
 from typing import Optional
 import json
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, HTTPException, Response, BackgroundTasks # Adicione BackgroundTasks aqui
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 

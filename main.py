@@ -2,7 +2,7 @@ import os
 import io
 import requests
 from typing import Optional
-
+import json
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -26,12 +26,21 @@ load_dotenv()
 
 vision_client = vision.ImageAnnotatorClient()
 
-# Google Sheets
+
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-creds = service_account.Credentials.from_service_account_file(
-    os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), scopes=SCOPES
+creds_json = os.getenv("GOOGLE_CREDENTIALS")
+
+if not creds_json:
+    raise Exception("Variável GOOGLE_CREDENTIALS não encontrada!")
+
+creds = service_account.Credentials.from_service_account_info(
+    json.loads(creds_json),
+    scopes=SCOPES
 )
+sheets_service = build('sheets', 'v4', credentials=creds)
+SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+
 sheets_service = build('sheets', 'v4', credentials=creds)
 SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 

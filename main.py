@@ -24,10 +24,7 @@ load_dotenv()
 # O GOOGLE_APPLICATION_CREDENTIALS deve apontar para o arquivo JSON da conta de serviço
 # ex: os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json" já é feito pela gcloud-sdk
 
-vision_client = vision.ImageAnnotatorClient()
-
-
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/cloud-platform']
 
 creds_json = os.getenv("GOOGLE_CREDENTIALS")
 
@@ -38,11 +35,13 @@ creds = service_account.Credentials.from_service_account_info(
     json.loads(creds_json),
     scopes=SCOPES
 )
+
+# Google Sheets client
 sheets_service = build('sheets', 'v4', credentials=creds)
 SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
-sheets_service = build('sheets', 'v4', credentials=creds)
-SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+# Google Vision client
+vision_client = vision.ImageAnnotatorClient(credentials=creds)
 
 # Slack
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")

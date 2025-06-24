@@ -36,7 +36,7 @@ creds = service_account.Credentials.from_service_account_info(
     scopes=SCOPES
 )
 
-# Google Sheets client
+# Google Sheets cliente
 sheets_service = build('sheets', 'v4', credentials=creds)
 SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 

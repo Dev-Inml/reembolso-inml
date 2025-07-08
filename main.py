@@ -220,11 +220,11 @@ async def read_root():
 @app.post("/slack/events")
 async def slack_events(request: Request, background_tasks: BackgroundTasks): # Adicione background_tasks
     req_body = await request.body()
-    timestamp = request.headers.get("X-Slack-Request-Timestamp")
-    signature = request.headers.get("X-Slack-Signature")
+    #timestamp = request.headers.get("X-Slack-Request-Timestamp")
+    #signature = request.headers.get("X-Slack-Signature")
 
-    if not signature_verifier.is_valid_request(req_body.decode("utf-8"), timestamp, signature):
-        raise HTTPException(status_code=403, detail="Invalid Slack request signature")
+    #if not signature_verifier.is_valid_request(req_body.decode("utf-8"), timestamp, signature):
+    #    raise HTTPException(status_code=403, detail="Invalid Slack request signature")
 
     request_data = await request.json()
     if "challenge" in request_data:

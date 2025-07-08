@@ -2,8 +2,8 @@ import os
 import io
 import requests
 from typing import Optional
-import json
-from fastapi import FastAPI, Request, HTTPException, Response, BackgroundTasks # Adicione BackgroundTasks aqui
+import json # Ainda precisaremos do json para outras coisas, mas não para carregar a credencial diretamente
+from fastapi import FastAPI, Request, HTTPException, Response, BackgroundTasks 
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -20,36 +20,35 @@ from twilio.rest import Client as TwilioClient
 load_dotenv()
 
 # --- Configurações das APIs ---
-# Google Cloud Vision
-# O GOOGLE_APPLICATION_CREDENTIALS deve apontar para o arquivo JSON da conta de serviço
-# ex: os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json" já é feito pela gcloud-sdk
+
+# Defina o caminho para o arquivo de credenciais.
+# Assume que 'service_account.json' está na mesma pasta do 'main.py'
+SERVICE_ACCOUNT_FILE = "service_account.json"
+
+# Verifica se o arquivo existe. É crucial para o deploy!
+if not os.path.exists(SERVICE_ACCOUNT_FILE):
+    # Se o arquivo não for encontrado, levante um erro claro.
+    # Em um ambiente de produção, este erro impedirá o app de iniciar.
+    raise Exception(f"Arquivo de credenciais '{SERVICE_ACCOUNT_FILE}' não encontrado! Certifique-se de que foi feito upload para a raiz do projeto.")
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/cloud-platform']
 
-# Altere o nome da variável de ambiente para GOOGLE_APPLICATION_CREDENTIALS
-creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") 
+# Carrega as credenciais diretamente do arquivo JSON
+# O método from_service_account_file lida com o parse do JSON internamente
+try:
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=SCOPES
+    )
+    print("DEBUG: Credenciais Google carregadas com sucesso a partir do arquivo.")
+except Exception as e:
+    # Captura qualquer erro durante o carregamento do arquivo ou autenticação inicial
+    raise Exception(f"Erro ao carregar credenciais do arquivo '{SERVICE_ACCOUNT_FILE}': {e}")
 
-if not creds_json:
-    # Isso vai levantar uma exceção se a variável não estiver definida, o que é bom
-    # Se você quer um fallback para local, pode adicionar:
-    try:
-        # Tenta carregar do arquivo local APENAS SE A VARIAVEL DE AMBIENTE NÃO ESTIVER PRESENTE
-        creds = service_account.Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
-    except Exception as e:
-        raise Exception(f"Variável GOOGLE_APPLICATION_CREDENTIALS não encontrada ou arquivo service_account.json ausente/inválido: {e}")
-else:
-    # Carrega do JSON string da variável de ambiente
-    try:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(creds_json),
-            scopes=SCOPES
-        )
-    except json.JSONDecodeError as e:
-        raise Exception(f"Erro ao decodificar JSON das credenciais GOOGLE_APPLICATION_CREDENTIALS: {e}")
 
 # Google Sheets cliente
 sheets_service = build('sheets', 'v4', credentials=creds)
-SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID") # Este ainda vem do .env / Railway
 
 # Google Vision client
 vision_client = vision.ImageAnnotatorClient(credentials=creds)
@@ -63,12 +62,12 @@ signature_verifier = SignatureVerifier(SLACK_SIGNING_SECRET)
 # Twilio (WhatsApp)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER") # Seu número Twilio WhatsApp
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 app = FastAPI()
 
-# --- Funções Auxiliares (mantidas asíncronas para download, OCR e Sheets) ---
+# --- Funções Auxiliares (sem alterações, mantidas completas como no último código) ---
 
 async def download_image(url: str, token: Optional[str] = None) -> bytes:
     """Faz o download de uma imagem de uma URL, opcionalmente com um token de autenticação."""
@@ -76,9 +75,8 @@ async def download_image(url: str, token: Optional[str] = None) -> bytes:
     if token:
         headers = {"Authorization": f"Bearer {token}"}
     
-    # Adicionando um timeout para a requisição de download, caso a imagem esteja lenta.
-    response = requests.get(url, headers=headers, timeout=10) # 10 segundos de timeout
-    response.raise_for_status()  # Levanta um erro para status de resposta ruins (4xx ou 5xx)
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()
     return response.content
 
 async def extract_text_from_image(image_content: bytes) -> str:
@@ -97,29 +95,23 @@ async def add_row_to_sheet(data: list):
     }
     result = sheets_service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID,
-        range="A1", # Assume que você está adicionando no final da primeira aba
+        range="A1",
         valueInputOption="USER_ENTERED",
         body=body
     ).execute()
     print(f"Linha adicionada: {result.get('updatedCells')} células.")
 
 def parse_expense_data(text: str) -> dict:
-    """
-    Tenta extrair valor, data e estabelecimento do texto OCR.
-    Esta é uma implementação muito básica e pode precisar de ajustes
-    com base nos comprovantes reais.
-    """
+    """Tenta extrair valor, data e estabelecimento do texto OCR."""
     data = {
         "valor": "Não encontrado",
         "data": "Não encontrada",
         "estabelecimento": "Não encontrado",
-        "descricao": text.strip() # O texto completo como descrição inicial
+        "descricao": text.strip()
     }
 
     import re
     
-    # Exemplo simples de extração de valor (números com vírgula/ponto)
-    # Procura por padrões comuns de valores (ex: 12,34 ou 12.34)
     valor_match = re.search(r'R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})|(\d{1,3}(?:,\d{3})*\.\d{2})', text, re.IGNORECASE)
     if valor_match:
         valor_str = valor_match.group(1) or valor_match.group(2)
@@ -129,24 +121,17 @@ def parse_expense_data(text: str) -> dict:
         except ValueError:
             pass
     
-    # Tentativa 2: Busca por datas (dd/mm/aaaa, dd-mm-aaaa, aaaa-mm-dd)
     data_match = re.search(r'\d{2}[-/]\d{2}[-/]\d{4}|\d{4}[-/]\d{2}[-/]\d{2}', text)
     if data_match:
         data["data"] = data_match.group(0)
 
     return data
 
-
-# --- Nova Função para Processamento em Background ---
 async def process_slack_expense_in_background(
     file_id: str, channel_id: str, user_id: str, slack_token: str
 ):
     """Processa o comprovante de despesa enviado via Slack em segundo plano."""
     try:
-        # Re-inicializa o cliente Slack para usar aqui, se necessário, ou passe o existente
-        # Para evitar problemas com o ciclo de vida da conexão, é melhor usar o cliente global ou passar.
-        # Aqui, estamos usando o cliente global, que é seguro se ele for inicializado uma vez.
-
         file_info_response = slack_client.files_info(file=file_id)
         file_info = file_info_response["file"]
         download_url = file_info["url_private"]
@@ -220,7 +205,6 @@ async def process_whatsapp_expense_in_background(
             to=from_number,
             body=(f"Ops! Houve um erro no processamento do seu comprovante. Por favor, tente novamente ou entre em contato com o suporte. Erro: {e}"))
 
-
 # --- Rotas do FastAPI ---
 
 @app.get("/")
@@ -229,13 +213,13 @@ async def read_root():
 
 # --- Slack Webhook ---
 @app.post("/slack/events")
-async def slack_events(request: Request, background_tasks: BackgroundTasks): # Adicione background_tasks
+async def slack_events(request: Request, background_tasks: BackgroundTasks):
     req_body = await request.body()
-    #timestamp = request.headers.get("X-Slack-Request-Timestamp")
-    #signature = request.headers.get("X-Slack-Signature")
+    timestamp = request.headers.get("X-Slack-Request-Timestamp")
+    signature = request.headers.get("X-Slack-Signature")
 
-    #if not signature_verifier.is_valid_request(req_body.decode("utf-8"), timestamp, signature):
-    #    raise HTTPException(status_code=403, detail="Invalid Slack request signature")
+    if not signature_verifier.is_valid_request(req_body.decode("utf-8"), timestamp, signature):
+        raise HTTPException(status_code=403, detail="Invalid Slack request signature")
 
     request_data = await request.json()
     if "challenge" in request_data:
@@ -250,19 +234,17 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks): # A
         user_id = event.get("user_id")
 
         if file_id:
-            # Adiciona a tarefa de processamento ao background
             background_tasks.add_task(
                 process_slack_expense_in_background,
                 file_id, channel_id, user_id, SLACK_BOT_TOKEN
             )
-            # Responde imediatamente ao Slack para evitar timeout
             return Response(status_code=200, content="Processing your request in the background.")
 
-    return Response(status_code=200) # Responde OK para outros eventos
+    return Response(status_code=200)
 
 # --- WhatsApp Webhook (Twilio) ---
 @app.post("/whatsapp/webhook")
-async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks): # Adicione background_tasks
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     form_data = await request.form()
     
     incoming_msg = form_data.get('Body', '').lower()
@@ -270,16 +252,12 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     media_url = form_data.get('MediaUrl0')
 
     if media_url:
-        # Adiciona a tarefa de processamento ao background
         background_tasks.add_task(
             process_whatsapp_expense_in_background,
             from_number, media_url
         )
-        # Responde imediatamente ao Twilio (Twilio espera TwiML XML, então a resposta é vazia)
-        # Twilio tem um timeout maior (15 segundos), mas é boa prática responder rápido.
         return Response(content=str(MessagingResponse()), media_type="application/xml")
     else:
-        # Para mensagens sem mídia, responde pedindo uma foto
         resp = MessagingResponse()
         msg = resp.message()
         msg.body("Olá! Para registrar um gasto, por favor, envie a foto do seu comprovante.")

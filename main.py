@@ -26,15 +26,26 @@ load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/cloud-platform']
 
-creds_json = os.getenv("GOOGLE_CREDENTIALS")
+# Altere o nome da variável de ambiente para GOOGLE_APPLICATION_CREDENTIALS
+creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") 
 
 if not creds_json:
-    raise Exception("Variável GOOGLE_CREDENTIALS não encontrada!")
-
-creds = service_account.Credentials.from_service_account_info(
-    json.loads(creds_json),
-    scopes=SCOPES
-)
+    # Isso vai levantar uma exceção se a variável não estiver definida, o que é bom
+    # Se você quer um fallback para local, pode adicionar:
+    try:
+        # Tenta carregar do arquivo local APENAS SE A VARIAVEL DE AMBIENTE NÃO ESTIVER PRESENTE
+        creds = service_account.Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+    except Exception as e:
+        raise Exception(f"Variável GOOGLE_APPLICATION_CREDENTIALS não encontrada ou arquivo service_account.json ausente/inválido: {e}")
+else:
+    # Carrega do JSON string da variável de ambiente
+    try:
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(creds_json),
+            scopes=SCOPES
+        )
+    except json.JSONDecodeError as e:
+        raise Exception(f"Erro ao decodificar JSON das credenciais GOOGLE_APPLICATION_CREDENTIALS: {e}")
 
 # Google Sheets cliente
 sheets_service = build('sheets', 'v4', credentials=creds)
